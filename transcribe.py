@@ -5,6 +5,8 @@ import re
 import tempfile
 import zipfile
 from datetime import datetime
+import google.generativeai as genai
+from typing import Any
 
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration, AudioProcessorBase
@@ -16,12 +18,11 @@ from pydub import AudioSegment
 try:
     from faster_whisper import WhisperModel
     HAVE_FASTER = True
-except Exception:
+except Exception as _FW_IMPORT_ERR:
+    WhisperModel = None           
     HAVE_FASTER = False
 
 # ---- Gemini (minutes) from secrets/env ----
-import google.generativeai as genai
-
 @st.cache_resource
 def configure_gemini() -> bool:
     key = (getattr(st, "secrets", {}).get("GEMINI_API_KEY") if hasattr(st, "secrets") else None)
@@ -33,9 +34,13 @@ def configure_gemini() -> bool:
 
 gemini_ready = configure_gemini()
 
-# ---- cache one whisper model for all users ----
 @st.cache_resource(show_spinner="Loading faster-whisper model...")
-def get_whisper(model_size: str = "base", device: str = "auto", compute_type: str = "int8") -> WhisperModel:
+def get_whisper(model_size: str = "base", device: str = "auto", compute_type: str = "int8") -> Any:
+    if WhisperModel is None:
+        raise RuntimeError(
+            "faster-whisper is not available on the server. "
+            f"Original import error: {_FW_IMPORT_ERR!r}"
+        )
     dev = device if device in {"cpu", "cuda"} else "auto"
     return WhisperModel(model_size, device=dev, compute_type=compute_type)
 
@@ -220,8 +225,7 @@ with col_right:
         value="Create clean minutes: key points, action details, and a short summary.",
         height=120,
     )
-    language_hint = st.text_input("Language hint (optional, e.g., en, ms, zh)", value="")
-
+    
 st.divider()
 
 c1, c2, c3 = st.columns([1,1,1])
